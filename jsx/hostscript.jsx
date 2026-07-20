@@ -11,3 +11,4 @@
 #include "modules/anchors-size-tags.jsx"
 #include "modules/inheritance.jsx"
 #include "modules/size-labels.jsx"
+#include "modules/secondary-size-labels.jsx"

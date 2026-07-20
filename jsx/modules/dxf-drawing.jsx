@@ -711,6 +711,18 @@ function createDxfStyleHintLayer(doc, artboard, activeLayer) {
         applyDxfDefaultSizeTagStyle(sizeTagSample, doc);
     }
     sizeTagSample.note = "AAMA_SIZE_TAG_SAMPLE|DEFAULT_V4";
+    if (typeof ensureDxfSecondarySizeTagSample === "function") {
+        ensureDxfSecondarySizeTagSample(
+            layer,
+            doc,
+            labelX,
+            startX,
+            sizeTagY,
+            pointScale,
+            millimeterScale,
+            sizeTagSample
+        );
+    }
     if (activeLayer) {
         doc.activeLayer = activeLayer;
     }

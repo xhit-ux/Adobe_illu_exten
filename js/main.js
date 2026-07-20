@@ -18,6 +18,9 @@ document.addEventListener("DOMContentLoaded", function () {
 	var orderCode = document.getElementById("order-code");
 	var sizeTagHeight = document.getElementById("size-tag-height");
 	var btnLabelSizes = document.getElementById("btn-label-sizes");
+	var secondaryOrderCode = document.getElementById("secondary-order-code");
+	var secondarySizeTagHeight = document.getElementById("secondary-size-tag-height");
+	var btnLabelSecondarySizes = document.getElementById("btn-label-secondary-sizes");
 	var inheritanceBaseSize = document.getElementById("inheritance-base-size");
 	var btnSetInheritanceBase = document.getElementById("btn-set-inheritance-base");
 	var btnInheritSizes = document.getElementById("btn-inherit-sizes");
@@ -220,6 +223,26 @@ document.addEventListener("DOMContentLoaded", function () {
 			JSON.stringify(sizeAnchor.value) + ", " +
 			JSON.stringify(normalizedOrderCode) + ", " +
 			heightMm + ")",
+			function (result) {
+				hostOperationBusy = false;
+				resultBox.value = result;
+			}
+		);
+	});
+
+	btnLabelSecondarySizes.addEventListener("click", function () {
+		if (hostOperationBusy) {
+			return;
+		}
+		var normalizedOrderCode = String(secondaryOrderCode.value || "").replace(
+			/^\s+|\s+$/g, ""
+		);
+		var heightMm = readNumericInput(secondarySizeTagHeight, 12, false);
+		resultBox.value = "正在识别连续七点区域并生成二号尺码标...";
+		hostOperationBusy = true;
+		csInterface.evalScript(
+			"labelDxfSecondaryPieceSizes(" +
+			JSON.stringify(normalizedOrderCode) + ", " + heightMm + ")",
 			function (result) {
 				hostOperationBusy = false;
 				resultBox.value = result;

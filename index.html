@@ -388,6 +388,20 @@
                 </div>
             </details>
             <details class="size-settings">
+                <summary>二号尺码标</summary>
+                <div class="size-settings-grid">
+                    <label for="secondary-order-code">订单编码</label>
+                    <input id="secondary-order-code" type="text" maxlength="80" placeholder="请输入订单编码">
+                    <label for="secondary-size-tag-height">码标高度</label>
+                    <div class="unit-input">
+                        <input id="secondary-size-tag-height" type="number" min="0.1" step="0.1" value="12">
+                        <span class="unit-label">毫米</span>
+                    </div>
+                    <label for="btn-label-secondary-sizes">执行</label>
+                    <button id="btn-label-secondary-sizes" type="button">标记二号尺码</button>
+                </div>
+            </details>
+            <details class="size-settings">
                 <summary>元素修改继承</summary>
                 <div class="size-settings-grid">
                     <label for="inheritance-base-size">基准尺码组</label>
