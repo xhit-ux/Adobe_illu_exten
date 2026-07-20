@@ -151,7 +151,7 @@ function findDxfSizeGroupById(doc, sizeId, groups) {
 
 function isDxfInheritanceExcludedItem(item) {
     // 元素修改继承覆盖裁片内的全部元素，包括尺码标、边线、工艺线、刀口、
-    // 锚点、套花、嵌套编组和手工新增对象。剪切路径由每个目标裁片自己的
+    // 锚点、嵌套编组和手工新增对象。剪切路径由每个目标裁片自己的
     // 缝边/净边生成，属于派生对象，不能作为普通元素继承。
     try {
         return item && item.typename === "PathItem" &&
@@ -177,6 +177,30 @@ function isDxfInheritanceGroupItem(item) {
     }
 }
 
+function getDxfDirectInheritanceItems(container) {
+    var items = [];
+    var itemCount = 0;
+    try {
+        itemCount = container.pageItems.length;
+    } catch (pageItemsReadError) {
+        return items;
+    }
+    for (var itemIndex = 0; itemIndex < itemCount; itemIndex++) {
+        var item = null;
+        try {
+            item = container.pageItems[itemIndex];
+        } catch (itemReadError) {
+            continue;
+        }
+        if (!item || !isDxfDirectInheritanceItem(item, container) ||
+            isDxfInheritanceExcludedItem(item)) {
+            continue;
+        }
+        items.push(item);
+    }
+    return items;
+}
+
 function getDxfManualElementBaseName(item) {
     if (item.typename === "GroupItem") {
         return "编组";
@@ -190,14 +214,83 @@ function getDxfManualElementBaseName(item) {
     return "元素";
 }
 
+function isDxfFixedSizeInheritanceElement(item) {
+    return getDxfMetadataValue(item, "AAMA_FIXED_SIZE") === "1";
+}
+
+function getDxfDirectPieceElement(item) {
+    var pieceGroup = findDxfOwningPieceGroup(item);
+    if (pieceGroup === null) {
+        return null;
+    }
+    var current = item;
+    var guard = 0;
+    while (current && current.parent !== pieceGroup && guard < 30) {
+        current = current.parent;
+        guard++;
+    }
+    if (!current || current.parent !== pieceGroup ||
+        isDxfInheritanceExcludedItem(current)) {
+        return null;
+    }
+    return current;
+}
+
+function containsDxfPageItem(items, candidate) {
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        if (items[itemIndex] === candidate) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function setDxfSelectedElementsFixedSize(isFixed) {
+    try {
+        if (app.documents.length === 0) {
+            return "请先打开已导入裁片的 Illustrator 文档。";
+        }
+        var selection = app.activeDocument.selection;
+        if (!selection || selection.length === 0) {
+            return "请先在裁片中选择需要处理的文字、图片或矢量编组。";
+        }
+        var elements = [];
+        var skippedCount = 0;
+        for (var selectionIndex = 0; selectionIndex < selection.length; selectionIndex++) {
+            var element = getDxfDirectPieceElement(selection[selectionIndex]);
+            if (element === null ||
+                isDxfItemInsideLayer(element, "LanTu_继承基准")) {
+                skippedCount++;
+                continue;
+            }
+            if (!containsDxfPageItem(elements, element)) {
+                elements.push(element);
+            }
+        }
+        var updatedCount = 0;
+        for (var elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+            if (setDxfMetadataValue(
+                elements[elementIndex], "AAMA_FIXED_SIZE", isFixed ? "1" : "0"
+            )) {
+                updatedCount++;
+            }
+        }
+        if (updatedCount === 0) {
+            return "没有找到可加入继承的裁片直属元素。";
+        }
+        return (isFixed ? "已加入固定元素继承！" : "已移出固定元素继承！") +
+            "\n已处理: " + updatedCount + " 个元素" +
+            "\n已跳过: " + skippedCount + " 个选择。";
+    } catch (error) {
+        return "设置固定元素继承失败: " + error.message + "（行号: " + error.line + "）";
+    }
+}
+
 function collectExistingDxfInheritanceElementIds(container, pieceId, state) {
     var manualPrefix = pieceId + "|manual:";
-    for (var itemIndex = 0; itemIndex < container.pageItems.length; itemIndex++) {
-        var item = container.pageItems[itemIndex];
-        if (!isDxfDirectInheritanceItem(item, container) ||
-            isDxfInheritanceExcludedItem(item)) {
-            continue;
-        }
+    var items = getDxfDirectInheritanceItems(container);
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        var item = items[itemIndex];
         var elementId = getDxfElementId(item);
         if (elementId) {
             state.used[elementId] = true;
@@ -217,12 +310,9 @@ function collectExistingDxfInheritanceElementIds(container, pieceId, state) {
 }
 
 function ensureDxfInheritanceElementIds(container, pieceId, state) {
-    for (var itemIndex = 0; itemIndex < container.pageItems.length; itemIndex++) {
-        var item = container.pageItems[itemIndex];
-        if (!isDxfDirectInheritanceItem(item, container) ||
-            isDxfInheritanceExcludedItem(item)) {
-            continue;
-        }
+    var items = getDxfDirectInheritanceItems(container);
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        var item = items[itemIndex];
         var elementId = getDxfElementId(item);
         var isNewElement = !elementId;
         if (!elementId) {
@@ -252,7 +342,6 @@ function ensureDxfInheritanceElementIds(container, pieceId, state) {
 function prepareDxfSizeGroupForInheritance(sizeGroup) {
     var pieces = ensureDxfPieceStableIds(sizeGroup);
     for (var pieceIndex = 0; pieceIndex < pieces.length; pieceIndex++) {
-        orderDxfPieceArtwork(pieces[pieceIndex]);
         var state = { counter: 0, used: {} };
         collectExistingDxfInheritanceElementIds(
             pieces[pieceIndex], getDxfPieceStableId(pieces[pieceIndex]), state
@@ -368,18 +457,42 @@ function mapDxfPieceGroupsById(container) {
 
 function mapDxfInheritanceItems(container) {
     var map = {};
-    for (var itemIndex = 0; itemIndex < container.pageItems.length; itemIndex++) {
-        var item = container.pageItems[itemIndex];
-        if (!isDxfDirectInheritanceItem(item, container) ||
-            isDxfInheritanceExcludedItem(item)) {
-            continue;
-        }
+    var items = getDxfDirectInheritanceItems(container);
+    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        var item = items[itemIndex];
         var elementId = getDxfElementId(item);
         if (elementId) {
             map[elementId] = item;
         }
     }
     return map;
+}
+
+function syncDxfInheritanceItemOrder(baseContainer, targetContainer) {
+    var baseItems = getDxfDirectInheritanceItems(baseContainer);
+    var targetMap = mapDxfInheritanceItems(targetContainer);
+    // 从基码底部向顶部重建直属元素顺序，避免新增元素永远落在裁片最上层。
+    for (var itemIndex = baseItems.length - 1; itemIndex >= 0; itemIndex--) {
+        var elementId = getDxfElementId(baseItems[itemIndex]);
+        var targetItem = targetMap[elementId];
+        if (!targetItem) {
+            continue;
+        }
+        var wasLocked = false;
+        try {
+            wasLocked = targetItem.locked === true;
+            targetItem.locked = false;
+            targetItem.zOrder(ZOrderMethod.BRINGTOFRONT);
+        } catch (orderError) {
+            // 个别 Illustrator 对象不支持层级移动时保留当前顺序。
+        } finally {
+            try {
+                targetItem.locked = wasLocked;
+            } catch (lockRestoreError) {
+                // 层级结果不依赖锁定状态恢复。
+            }
+        }
+    }
 }
 
 function getDxfItemCenter(item) {
@@ -625,36 +738,42 @@ function getDxfInheritanceGradeTransform(
 }
 
 function scaleDxfInheritanceDelta(delta, context) {
-    var positionScale = context.positionScale || context.gradeScale || 1;
+    var scaleX = context.elementScaleX || context.gradeScaleX ||
+        context.positionScale || context.gradeScale || 1;
+    var scaleY = context.elementScaleY || context.gradeScaleY ||
+        context.positionScale || context.gradeScale || 1;
     return [
-        delta[0] * positionScale,
-        delta[1] * positionScale
+        delta[0] * scaleX,
+        delta[1] * scaleY
     ];
 }
 
 function mapDxfInheritanceBasePoint(point, context) {
-    var positionScale = context.positionScale || context.gradeScale || 1;
+    var scaleX = context.elementScaleX || context.gradeScaleX ||
+        context.positionScale || context.gradeScale || 1;
+    var scaleY = context.elementScaleY || context.gradeScaleY ||
+        context.positionScale || context.gradeScale || 1;
     if (context.snapshotPieceCenter && context.targetPieceCenter) {
         return [
             context.targetPieceCenter[0] +
-                (point[0] - context.snapshotPieceCenter[0]) * positionScale,
+                (point[0] - context.snapshotPieceCenter[0]) * scaleX,
             context.targetPieceCenter[1] +
-                (point[1] - context.snapshotPieceCenter[1]) * positionScale
+                (point[1] - context.snapshotPieceCenter[1]) * scaleY
         ];
     }
     if (context.baseReferencePoint && context.targetReferencePoint) {
         return [
             context.targetReferencePoint[0] +
-                (point[0] - context.baseReferencePoint[0]) * positionScale,
+                (point[0] - context.baseReferencePoint[0]) * scaleX,
             context.targetReferencePoint[1] +
-                (point[1] - context.baseReferencePoint[1]) * positionScale
+                (point[1] - context.baseReferencePoint[1]) * scaleY
         ];
     }
     return [
         context.targetPieceCenter[0] +
-        (point[0] - context.snapshotPieceCenter[0]) * positionScale,
+        (point[0] - context.snapshotPieceCenter[0]) * scaleX,
         context.targetPieceCenter[1] +
-        (point[1] - context.snapshotPieceCenter[1]) * positionScale
+        (point[1] - context.snapshotPieceCenter[1]) * scaleY
     ];
 }
 
@@ -887,7 +1006,7 @@ function isDxfInheritedDimensionClose(actualValue, expectedValue) {
 }
 
 function resizeDxfInheritedItemAboutCenter(
-    item, horizontalScale, verticalScale, verifyUniformScale
+    item, horizontalScale, verticalScale, verifyUniformScale, lineWidthScale
 ) {
     if (!isFinite(horizontalScale) || !isFinite(verticalScale) ||
         horizontalScale <= 0.000001 || verticalScale <= 0.000001) {
@@ -896,7 +1015,8 @@ function resizeDxfInheritedItemAboutCenter(
     var beforeFrame = getDxfItemGeometricFrame(item);
     var horizontalPercent = horizontalScale * 100;
     var verticalPercent = verticalScale * 100;
-    var lineWidthPercent = Math.sqrt(horizontalScale * verticalScale) * 100;
+    var lineWidthPercent = lineWidthScale !== undefined ?
+        lineWidthScale * 100 : Math.sqrt(horizontalScale * verticalScale) * 100;
     var resized = false;
 
     // Illustrator 对剪切组省略可选参数时，各版本采用的默认缩放基点并不稳定。
@@ -1092,6 +1212,7 @@ function applyDxfExistingElementDelta(snapshotItem, baseItem, targetItem, contex
 function duplicateDxfInheritedElement(baseItem, targetContainer, context) {
     var duplicate = baseItem.duplicate(targetContainer, ElementPlacement.PLACEATEND);
     var baseCenter = getDxfItemCenter(baseItem);
+    var isFixedSize = isDxfFixedSizeInheritanceElement(baseItem);
     var gradeScaleX = context.gradeScaleX || context.pieceScaleX ||
         context.gradeScale || 1;
     var gradeScaleY = context.gradeScaleY || context.pieceScaleY ||
@@ -1103,9 +1224,10 @@ function duplicateDxfInheritedElement(baseItem, targetContainer, context) {
     } catch (lockReadError) {
         duplicateWasLocked = false;
     }
-    if (!resizeDxfInheritedItemAboutCenter(
+    var transformed = isFixedSize || resizeDxfInheritedItemAboutCenter(
         duplicate, gradeScaleX, gradeScaleY, true
-    )) {
+    );
+    if (!transformed) {
         try {
             duplicate.remove();
         } catch (removeResizeFailureError) {
@@ -1116,6 +1238,9 @@ function duplicateDxfInheritedElement(baseItem, targetContainer, context) {
     try {
         var duplicateCenter = getDxfItemCenter(duplicate);
         var mappedCenter = mapDxfInheritanceBasePoint(baseCenter, context);
+        if (mappedCenter === null) {
+            throw new Error("新增元素缺少目标位置映射参数");
+        }
         duplicate.translate(
             mappedCenter[0] - duplicateCenter[0],
             mappedCenter[1] - duplicateCenter[1]
@@ -1148,20 +1273,6 @@ function duplicateDxfInheritedElement(baseItem, targetContainer, context) {
         duplicate.locked = duplicateWasLocked;
     } catch (lockRestoreError) {
         // Lock state does not affect the inherited geometry.
-    }
-    if (isDxfPatternGroup(duplicate)) {
-        var targetPiece = findDxfOwningPieceGroup(targetContainer);
-        var targetSize = targetPiece !== null ? findDxfOwningSizeGroup(targetPiece) : null;
-        if (targetPiece !== null) {
-            setDxfMetadataValue(
-                duplicate, "AAMA_PATTERN_PIECE_ID", getDxfPieceStableId(targetPiece)
-            );
-        }
-        if (targetSize !== null) {
-            setDxfMetadataValue(
-                duplicate, "AAMA_PATTERN_SIZE_ID", getDxfSizeGroupId(targetSize)
-            );
-        }
     }
     return duplicate;
 }
@@ -1200,14 +1311,17 @@ function inheritDxfContainerChanges(snapshotContainer, baseContainer, targetCont
                 targetItem.remove();
             }
             duplicateDxfInheritedElement(baseItem, targetContainer, context);
+            if (isDxfFixedSizeInheritanceElement(baseItem)) {
+                result.fixedPositioned++;
+            }
             result.added++;
             continue;
         }
 
-        // 手工添加的底图、Logo、文字等元素不应依赖上一轮目标码结果继续累乘。
-        // 每次都从当前基码重新复制，再按本次 RUL 做一次绝对缩放和定位；这样也能
-        // 自动纠正旧版本已经生成但横向倍率错误的目标码元素。
-        if (isDxfManualInheritanceElementId(elementId)) {
+        // 手工新增元素每次都从当前基码重新复制，避免依赖上一轮结果继续累乘。
+        // 固定尺寸元素也走重建，但只映射位置，不改变自身宽高或文字字号。
+        var isFixedSize = isDxfFixedSizeInheritanceElement(baseItem);
+        if (isDxfManualInheritanceElementId(elementId) || isFixedSize) {
             var rebuiltItem = duplicateDxfInheritedElement(
                 baseItem, targetContainer, context
             );
@@ -1220,6 +1334,9 @@ function inheritDxfContainerChanges(snapshotContainer, baseContainer, targetCont
                     // Ignore cleanup errors and report the replacement failure.
                 }
                 throw new Error("目标尺码中的旧新增元素无法替换");
+            }
+            if (isFixedSize) {
+                result.fixedPositioned++;
             }
             result.rebuilt++;
             continue;
@@ -1301,6 +1418,7 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
             deleted: 0,
             updated: 0,
             rebuilt: 0,
+            fixedPositioned: 0,
             missingPieces: 0,
             missingGradeSizes: 0,
             missingGradeRules: 0,
@@ -1390,8 +1508,8 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
                     gradeScaleX: gradeTransform.scaleX,
                     gradeScaleY: gradeTransform.scaleY,
                     positionScale: gradeTransform.positionScale,
-                    pieceScaleX: gradeTransform.scaleX,
-                    pieceScaleY: gradeTransform.scaleY
+                    elementScaleX: gradeTransform.scaleX,
+                    elementScaleY: gradeTransform.scaleY
                 };
                 inheritDxfContainerChanges(
                     snapshotPiece,
@@ -1400,14 +1518,16 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
                     context,
                     result
                 );
-                orderDxfPieceArtwork(targetPiece);
+                syncDxfInheritanceItemOrder(basePieces[pieceId], targetPiece);
+                var clipPath = findDxfPieceClipPath(targetPiece);
+                if (clipPath !== null) {
+                    try {
+                        clipPath.zOrder(ZOrderMethod.BRINGTOFRONT);
+                    } catch (clipOrderError) {
+                        // 保持当前剪切关系。
+                    }
+                }
                 result.pieces++;
-            }
-        }
-
-        for (var basePieceId in basePieces) {
-            if (basePieces.hasOwnProperty(basePieceId)) {
-                orderDxfPieceArtwork(basePieces[basePieceId]);
             }
         }
 
@@ -1441,6 +1561,7 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
             "新增: " + result.added + "；删除: " + result.deleted +
                 "；按RUL重建: " + result.rebuilt +
                 "；更新/移动: " + result.updated + "\n" +
+            "固定尺寸定位: " + result.fixedPositioned + " 个\n" +
             "缺少对应裁片: " + result.missingPieces + " 个\n" +
             "RUL位置倍率: " + gradeScaleSummary + "\n" +
             "RUL元素X倍率: " + gradeScaleXSummary + "\n" +

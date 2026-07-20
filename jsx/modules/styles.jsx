@@ -36,9 +36,6 @@ function applyDxfSampleStyleRecursively(container, role, samplePath) {
             continue;
         }
         if (item.typename === "GroupItem") {
-            if (isDxfPatternGroup(item)) {
-                continue;
-            }
             updatedCount += applyDxfSampleStyleRecursively(item, role, samplePath);
         } else if (item.typename === "PathItem" &&
             getDxfPrimaryNoteLine(item.note) !== "AAMA_NOTCH_LOCATOR" &&

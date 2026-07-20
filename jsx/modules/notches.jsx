@@ -482,7 +482,7 @@ function collectDxfBoundaryPathsRecursively(container, taggedPaths, semanticPath
             }
         } else if (itemType === "GroupItem") {
             // 新结构的内外线都是裁片直属路径。仅为旧文档的“外线组”保留
-            // 一层兼容递归，普通底图/Logo 编组绝不能参与边界识别。
+            // 只递归语义边线组，普通手工新增编组不能参与边界识别。
             var groupRole = "";
             try {
                 groupRole = getDxfPrimaryNoteLine(item.note);

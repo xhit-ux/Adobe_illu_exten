@@ -340,15 +340,6 @@ function flattenLegacyDxfOuterLineGroups(pieceGroup) {
     return movedCount;
 }
 
-function isDxfPatternGroup(item) {
-    try {
-        return item && item.typename === "GroupItem" &&
-            getDxfPrimaryNoteLine(item.note).indexOf("AAMA_PATTERN_GROUP|") === 0;
-    } catch (invalidPatternItemError) {
-        return false;
-    }
-}
-
 function collectDxfClosedPathsByRole(container, role, result) {
     for (var itemIndex = 0; itemIndex < container.pageItems.length; itemIndex++) {
         var item = container.pageItems[itemIndex];
@@ -447,27 +438,6 @@ function orderDxfPieceArtwork(pieceGroup) {
     var outerPaths = getDxfBoundaryPaths(pieceGroup);
     var sizeTags = typeof findDxfPieceSizeTags === "function" ?
         findDxfPieceSizeTags(pieceGroup) : [];
-    var patternGroups = [];
-    for (var groupIndex = 0; groupIndex < pieceGroup.groupItems.length; groupIndex++) {
-        var group = pieceGroup.groupItems[groupIndex];
-        if (group.parent === pieceGroup && isDxfPatternGroup(group)) {
-            patternGroups.push(group);
-        }
-    }
-    patternGroups.sort(function (first, second) {
-        var firstPriority = typeof getDxfPatternZPriority === "function" ?
-            getDxfPatternZPriority(first) : 0;
-        var secondPriority = typeof getDxfPatternZPriority === "function" ?
-            getDxfPatternZPriority(second) : 0;
-        return secondPriority - firstPriority;
-    });
-    for (var patternIndex = 0; patternIndex < patternGroups.length; patternIndex++) {
-        try {
-            patternGroups[patternIndex].zOrder(ZOrderMethod.SENDTOBACK);
-        } catch (patternOrderError) {
-            // 保留当前层级；不影响套图几何和蒙版。
-        }
-    }
     for (var sizeTagIndex = 0; sizeTagIndex < sizeTags.length; sizeTagIndex++) {
         if (sizeTags[sizeTagIndex].parent === pieceGroup) {
             try {

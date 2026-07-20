@@ -5,7 +5,7 @@ var LANTU_DXF_UNIT_CACHE = {
     scaleFactor: 1
 };
 
-function identifyPatternPieces() {
+function scanDxfDocumentPieces() {
     try {
         invalidateDxfAnchorOptionsCache();
         if (app.documents.length === 0) {

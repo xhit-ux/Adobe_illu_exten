@@ -23,13 +23,8 @@ document.addEventListener("DOMContentLoaded", function () {
 	var btnInheritSizes = document.getElementById("btn-inherit-sizes");
 	var btnSelectInheritanceRul = document.getElementById("btn-select-inheritance-rul");
 	var inheritanceRulFileName = document.getElementById("inheritance-rul-file-name");
-	var patternBaseSize = document.getElementById("pattern-base-size");
-	var patternTypeInputs = document.querySelectorAll("input[name='pattern-type']");
-	var btnCreatePattern = document.getElementById("btn-create-pattern");
-	var btnClearPattern = document.getElementById("btn-clear-pattern");
-	var btnUseSeamBoundary = document.getElementById("btn-use-seam-boundary");
-	var btnUseCleanBoundary = document.getElementById("btn-use-clean-boundary");
-	var btnInheritPattern = document.getElementById("btn-inherit-pattern");
+	var btnAddFixedElements = document.getElementById("btn-add-fixed-elements");
+	var btnRemoveFixedElements = document.getElementById("btn-remove-fixed-elements");
 	var resultBox = document.getElementById("result-box");
 	var hostOperationBusy = false;
 
@@ -66,7 +61,6 @@ document.addEventListener("DOMContentLoaded", function () {
 		var hasBaseSize = !!inheritanceBaseSize.value;
 		btnSetInheritanceBase.disabled = !hasBaseSize;
 		btnInheritSizes.disabled = !hasBaseSize || !selectedInheritanceRulPath;
-		updatePatternButtons();
 	}
 
 	function readNumericInput(element, fallbackValue, allowZero) {
@@ -164,63 +158,14 @@ document.addEventListener("DOMContentLoaded", function () {
 		});
 	}
 
-	function updatePatternButtons() {
-		var hasSelection = !!patternBaseSize.value;
-		btnCreatePattern.disabled = !hasSelection;
-		btnInheritPattern.disabled = !hasSelection || !selectedInheritanceRulPath;
-	}
-
-	function getPatternType() {
-		for (var typeIndex = 0; typeIndex < patternTypeInputs.length; typeIndex++) {
-			if (patternTypeInputs[typeIndex].checked) {
-				return patternTypeInputs[typeIndex].value;
-			}
-		}
-		return "background";
-	}
-
-	function refreshPatternSizeOptions(preferredValue) {
-		csInterface.evalScript("getDxfInheritanceSizeOptions()", function (result) {
-			var previousValue = preferredValue || patternBaseSize.value;
-			var lines = String(result || "").split(/\r?\n/);
-			patternBaseSize.innerHTML = "";
-			var placeholderOption = document.createElement("option");
-			placeholderOption.value = "";
-			placeholderOption.textContent = "请选择基准尺码组";
-			patternBaseSize.appendChild(placeholderOption);
-			var optionCount = 0;
-			for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-				if (!lines[lineIndex] || lines[lineIndex].indexOf("ERROR|") === 0) {
-					continue;
-				}
-				var separatorIndex = lines[lineIndex].indexOf("\t");
-				if (separatorIndex < 1) {
-					continue;
-				}
-				var option = document.createElement("option");
-				option.value = lines[lineIndex].substring(0, separatorIndex);
-				option.textContent = lines[lineIndex].substring(separatorIndex + 1);
-				patternBaseSize.appendChild(option);
-				optionCount++;
-			}
-			if (optionCount === 0) {
-				placeholderOption.textContent = "暂无基准尺码组";
-			} else if (previousValue) {
-				patternBaseSize.value = previousValue;
-			}
-			updatePatternButtons();
-		});
-	}
-
 	btnScan.addEventListener("click", function () {
 		resultBox.value = "正在扫描文档图层，请稍候...";
 		hostOperationBusy = true;
-		csInterface.evalScript("identifyPatternPieces()", function (result) {
+		csInterface.evalScript("scanDxfDocumentPieces()", function (result) {
 			hostOperationBusy = false;
 			resultBox.value = result;
 			refreshSizeAnchorPairOptions();
 			refreshInheritanceSizeOptions();
-			refreshPatternSizeOptions();
 		});
 	});
 
@@ -328,66 +273,16 @@ document.addEventListener("DOMContentLoaded", function () {
 		);
 	});
 
-	patternBaseSize.addEventListener("change", function () {
-		updatePatternButtons();
-	});
-
-	btnCreatePattern.addEventListener("click", function () {
-		if (!patternBaseSize.value || hostOperationBusy) {
-			return;
-		}
-		resultBox.value = "正在把剪贴板图案加入所选裁片剪切组...";
-		hostOperationBusy = true;
-		csInterface.evalScript(
-			"createDxfPatternLayout(" +
-			JSON.stringify(patternBaseSize.value) + ", " +
-			JSON.stringify(getPatternType()) + ")",
-			function (result) {
-				hostOperationBusy = false;
-				resultBox.value = result;
-			}
-		);
-	});
-
-	btnInheritPattern.addEventListener("click", function () {
-		if (!patternBaseSize.value || !selectedInheritanceRulPath || hostOperationBusy) {
-			return;
-		}
-		resultBox.value = "正在按元素新增规则继承套花...";
-		hostOperationBusy = true;
-		csInterface.evalScript(
-			"inheritDxfPatternToOtherSizes(" +
-			JSON.stringify(patternBaseSize.value) + ", " +
-			JSON.stringify(selectedInheritanceRulPath) + ")",
-			function (result) {
-				hostOperationBusy = false;
-				resultBox.value = result;
-				selectedInheritanceRulPath = "";
-				updateInheritanceRulState();
-			}
-		);
-	});
-
-	btnClearPattern.addEventListener("click", function () {
+	function setSelectedElementsFixedSize(isFixed) {
 		if (hostOperationBusy) {
 			return;
 		}
-		resultBox.value = "正在清空全部套花内容...";
-		hostOperationBusy = true;
-		csInterface.evalScript("clearDxfPatternLayouts()", function (result) {
-			hostOperationBusy = false;
-			resultBox.value = result;
-		});
-	});
-
-	function applyPatternClipBoundary(boundaryType) {
-		if (hostOperationBusy) {
-			return;
-		}
-		resultBox.value = "正在切换裁片剪切边界...";
+		resultBox.value = isFixed ?
+			"正在把选中对象加入固定元素继承..." :
+			"正在把选中对象移出固定元素继承...";
 		hostOperationBusy = true;
 		csInterface.evalScript(
-			"applyDxfPieceClipBoundary(" + JSON.stringify(boundaryType) + ")",
+			"setDxfSelectedElementsFixedSize(" + (isFixed ? "true" : "false") + ")",
 			function (result) {
 				hostOperationBusy = false;
 				resultBox.value = result;
@@ -395,12 +290,12 @@ document.addEventListener("DOMContentLoaded", function () {
 		);
 	}
 
-	btnUseSeamBoundary.addEventListener("click", function () {
-		applyPatternClipBoundary("outer");
+	btnAddFixedElements.addEventListener("click", function () {
+		setSelectedElementsFixedSize(true);
 	});
 
-	btnUseCleanBoundary.addEventListener("click", function () {
-		applyPatternClipBoundary("clean");
+	btnRemoveFixedElements.addEventListener("click", function () {
+		setSelectedElementsFixedSize(false);
 	});
 
 	btnSelectDxf.addEventListener("click", function () {
@@ -445,7 +340,6 @@ document.addEventListener("DOMContentLoaded", function () {
 				resultBox.value = result;
 				refreshSizeAnchorPairOptions("PAIR:1");
 				refreshInheritanceSizeOptions();
-				refreshPatternSizeOptions();
 			}
 		);
 	});
@@ -454,5 +348,4 @@ document.addEventListener("DOMContentLoaded", function () {
 	updateInheritanceRulState();
 	refreshSizeAnchorPairOptions("PAIR:1");
 	refreshInheritanceSizeOptions();
-	refreshPatternSizeOptions();
 });

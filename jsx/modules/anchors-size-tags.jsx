@@ -254,11 +254,22 @@ function selectDxfSizeAnchorPair(pairValue) {
 
 function findDxfPieceSizeTags(pieceGroup) {
     var tags = [];
-    for (var textIndex = 0; textIndex < pieceGroup.textFrames.length; textIndex++) {
-        var text = pieceGroup.textFrames[textIndex];
-        if (text.parent === pieceGroup &&
-            getDxfPrimaryNoteLine(text.note).indexOf("AAMA_SIZE_TAG|") === 0) {
-            tags.push(text);
+    var textCount = 0;
+    try {
+        textCount = pieceGroup.textFrames.length;
+    } catch (textCollectionError) {
+        return tags;
+    }
+    for (var textIndex = 0; textIndex < textCount; textIndex++) {
+        var text = null;
+        try {
+            text = pieceGroup.textFrames[textIndex];
+            if (text && text.parent === pieceGroup &&
+                getDxfPrimaryNoteLine(text.note).indexOf("AAMA_SIZE_TAG|") === 0) {
+                tags.push(text);
+            }
+        } catch (invalidTextError) {
+            // 忽略 Illustrator 文字集合中的失效引用。
         }
     }
     return tags;
@@ -280,13 +291,23 @@ function findDxfPieceSizeTag(pieceGroup) {
 
 function removeDxfExtraPieceSizeTags(pieceGroup, keepTag) {
     var removedCount = 0;
-    for (var textIndex = pieceGroup.textFrames.length - 1; textIndex >= 0; textIndex--) {
-        var text = pieceGroup.textFrames[textIndex];
-        if (text.parent === pieceGroup &&
-            text !== keepTag &&
-            getDxfPrimaryNoteLine(text.note).indexOf("AAMA_SIZE_TAG|") === 0) {
-            text.remove();
-            removedCount++;
+    var textCount = 0;
+    try {
+        textCount = pieceGroup.textFrames.length;
+    } catch (textCollectionError) {
+        return removedCount;
+    }
+    for (var textIndex = textCount - 1; textIndex >= 0; textIndex--) {
+        try {
+            var text = pieceGroup.textFrames[textIndex];
+            if (text && text.parent === pieceGroup &&
+                text !== keepTag &&
+                getDxfPrimaryNoteLine(text.note).indexOf("AAMA_SIZE_TAG|") === 0) {
+                text.remove();
+                removedCount++;
+            }
+        } catch (invalidTextError) {
+            // 忽略 Illustrator 文字集合中的失效引用。
         }
     }
     return removedCount;
