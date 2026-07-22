@@ -28,8 +28,18 @@ document.addEventListener("DOMContentLoaded", function () {
 	var inheritanceRulFileName = document.getElementById("inheritance-rul-file-name");
 	var btnAddFixedElements = document.getElementById("btn-add-fixed-elements");
 	var btnRemoveFixedElements = document.getElementById("btn-remove-fixed-elements");
+	var btnCreateOrderSamples = document.getElementById("btn-create-order-samples");
+	var btnParseOrders = document.getElementById("btn-parse-orders");
+	var btnSubmitOrders = document.getElementById("btn-submit-orders");
+	var btnAddOrderRow = document.getElementById("btn-add-order-row");
+	var btnClearOrders = document.getElementById("btn-clear-orders");
+	var orderPasteInput = document.getElementById("order-paste-input");
+	var orderStatus = document.getElementById("order-status");
+	var orderTableSection = document.getElementById("order-table-section");
+	var orderTableBody = document.getElementById("order-table-body");
 	var resultBox = document.getElementById("result-box");
 	var hostOperationBusy = false;
+	var orderParseTimer = null;
 
 	function getFileName(filePath) {
 		var parts = String(filePath || "").split(/[\\\/]/);
@@ -73,6 +83,177 @@ document.addEventListener("DOMContentLoaded", function () {
 			element.value = String(fallbackValue);
 		}
 		return value;
+	}
+
+	function setOrderStatus(message, isError) {
+		orderStatus.textContent = message;
+		orderStatus.style.color = isError ? "#e45b5b" : "#a9a9a9";
+	}
+
+	function isOrderHeaderRow(columns) {
+		return columns.length >= 5 &&
+			/订单/.test(columns[0]) &&
+			/尺码|码数/.test(columns[1]) &&
+			/名字/.test(columns[2]) &&
+			/号码|数字/.test(columns[3]) &&
+			/件数|数量/.test(columns[4]);
+	}
+
+	function splitOrderColumns(line) {
+		if (line.indexOf("\t") >= 0) {
+			return line.split("\t");
+		}
+		return line.replace(/｜/g, "|").split("|");
+	}
+
+	function parsePastedOrderRows(text) {
+		var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+		var rows = [];
+		for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+			var line = lines[lineIndex].replace(/^\s+|\s+$/g, "");
+			if (!line) {
+				continue;
+			}
+			var columns = splitOrderColumns(line);
+			for (var columnIndex = 0; columnIndex < columns.length; columnIndex++) {
+				columns[columnIndex] = columns[columnIndex].replace(/^\s+|\s+$/g, "");
+			}
+			if (rows.length === 0 && isOrderHeaderRow(columns)) {
+				continue;
+			}
+			if (columns.length !== 5) {
+				throw new Error("第 " + (lineIndex + 1) + " 行不是五列数据");
+			}
+			rows.push({
+				orderCode: columns[0],
+				size: columns[1],
+				name: columns[2],
+				number: columns[3],
+				quantity: columns[4]
+			});
+		}
+		if (rows.length === 0) {
+			throw new Error("没有识别到订单数据");
+		}
+		return rows;
+	}
+
+	function createOrderInput(fieldName, value) {
+		var input = document.createElement("input");
+		input.type = "text";
+		input.setAttribute("data-order-field", fieldName);
+		input.value = String(value === undefined || value === null ? "" : value);
+		input.addEventListener("input", function () {
+			input.classList.remove("invalid");
+		});
+		return input;
+	}
+
+	function addOrderTableRow(values) {
+		var row = document.createElement("tr");
+		var fields = ["orderCode", "size", "name", "number", "quantity"];
+		values = values || {};
+		for (var fieldIndex = 0; fieldIndex < fields.length; fieldIndex++) {
+			var cell = document.createElement("td");
+			cell.appendChild(createOrderInput(fields[fieldIndex], values[fields[fieldIndex]]));
+			row.appendChild(cell);
+		}
+		var removeCell = document.createElement("td");
+		var removeButton = document.createElement("button");
+		removeButton.type = "button";
+		removeButton.className = "order-row-remove";
+		removeButton.textContent = "×";
+		removeButton.title = "删除此行";
+		removeButton.setAttribute("aria-label", "删除此订单行");
+		removeButton.addEventListener("click", function () {
+			orderTableBody.removeChild(row);
+			updateOrderTableState();
+		});
+		removeCell.appendChild(removeButton);
+		row.appendChild(removeCell);
+		orderTableBody.appendChild(row);
+		return row;
+	}
+
+	function updateOrderTableState() {
+		var hasRows = orderTableBody.children.length > 0;
+		orderTableSection.classList.toggle("visible", hasRows);
+		btnSubmitOrders.disabled = !hasRows || hostOperationBusy;
+	}
+
+	function renderOrderRows(rows) {
+		orderTableBody.innerHTML = "";
+		for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+			addOrderTableRow(rows[rowIndex]);
+		}
+		updateOrderTableState();
+	}
+
+	function parseAndRenderOrders() {
+		try {
+			var rows = parsePastedOrderRows(orderPasteInput.value);
+			renderOrderRows(rows);
+			setOrderStatus("已识别 " + rows.length + " 行，可继续编辑", false);
+		} catch (error) {
+			setOrderStatus(error.message, true);
+			orderTableBody.innerHTML = "";
+			updateOrderTableState();
+		}
+	}
+
+	function collectOrderRows() {
+		var rows = [];
+		var tableRows = orderTableBody.querySelectorAll("tr");
+		var firstInvalid = null;
+		for (var rowIndex = 0; rowIndex < tableRows.length; rowIndex++) {
+			var values = {};
+			var fields = ["orderCode", "size", "name", "number", "quantity"];
+			var hasValue = false;
+			for (var fieldIndex = 0; fieldIndex < fields.length; fieldIndex++) {
+				var fieldName = fields[fieldIndex];
+				var input = tableRows[rowIndex].querySelector(
+					"input[data-order-field='" + fieldName + "']"
+				);
+				input.classList.remove("invalid");
+				values[fieldName] = String(input.value || "").replace(
+					/^\s+|\s+$/g, ""
+				);
+				hasValue = hasValue || values[fieldName] !== "";
+			}
+			if (!hasValue) {
+				continue;
+			}
+			var orderInput = tableRows[rowIndex].querySelector(
+				"input[data-order-field='orderCode']"
+			);
+			var sizeInput = tableRows[rowIndex].querySelector(
+				"input[data-order-field='size']"
+			);
+			var quantityInput = tableRows[rowIndex].querySelector(
+				"input[data-order-field='quantity']"
+			);
+			if (!values.orderCode) {
+				orderInput.classList.add("invalid");
+				firstInvalid = firstInvalid || orderInput;
+			}
+			if (!values.size) {
+				sizeInput.classList.add("invalid");
+				firstInvalid = firstInvalid || sizeInput;
+			}
+			if (!/^\d+$/.test(values.quantity) || parseInt(values.quantity, 10) < 1) {
+				quantityInput.classList.add("invalid");
+				firstInvalid = firstInvalid || quantityInput;
+			}
+			rows.push(values);
+		}
+		if (rows.length === 0) {
+			throw new Error("订单表格中没有可提交的数据");
+		}
+		if (firstInvalid) {
+			firstInvalid.focus();
+			throw new Error("请补全订单编号、尺码，并把件数填写为正整数");
+		}
+		return rows;
 	}
 
 	function selectFile(title, extension, callback) {
@@ -238,7 +419,7 @@ document.addEventListener("DOMContentLoaded", function () {
 			/^\s+|\s+$/g, ""
 		);
 		var heightMm = readNumericInput(secondarySizeTagHeight, 12, false);
-		resultBox.value = "正在识别连续七点区域并生成二号尺码标...";
+		resultBox.value = "正在识别连续七点区域、裁切缝合并生成二号尺码标...";
 		hostOperationBusy = true;
 		csInterface.evalScript(
 			"labelDxfSecondaryPieceSizes(" +
@@ -321,6 +502,94 @@ document.addEventListener("DOMContentLoaded", function () {
 		setSelectedElementsFixedSize(false);
 	});
 
+	btnCreateOrderSamples.addEventListener("click", function () {
+		if (hostOperationBusy) {
+			return;
+		}
+		resultBox.value = "正在生成名字与数字号码参数样例...";
+		hostOperationBusy = true;
+		updateOrderTableState();
+		csInterface.evalScript("ensureDxfPersonalizedOrderSamples()", function (result) {
+			hostOperationBusy = false;
+			resultBox.value = result;
+			updateOrderTableState();
+		});
+	});
+
+	btnParseOrders.addEventListener("click", function () {
+		parseAndRenderOrders();
+	});
+
+	orderPasteInput.addEventListener("paste", function (event) {
+		var clipboardText = event.clipboardData ?
+			event.clipboardData.getData("text/plain") : "";
+		if (!clipboardText) {
+			return;
+		}
+		event.preventDefault();
+		orderPasteInput.value = clipboardText;
+		parseAndRenderOrders();
+	});
+
+	orderPasteInput.addEventListener("input", function () {
+		if (orderParseTimer !== null) {
+			clearTimeout(orderParseTimer);
+		}
+		var value = orderPasteInput.value;
+		if (value.indexOf("\t") < 0 && value.indexOf("\n") < 0 &&
+			value.indexOf("|") < 0 && value.indexOf("｜") < 0) {
+			return;
+		}
+		orderParseTimer = setTimeout(function () {
+			orderParseTimer = null;
+			parseAndRenderOrders();
+		}, 180);
+	});
+
+	btnAddOrderRow.addEventListener("click", function () {
+		var row = addOrderTableRow();
+		updateOrderTableState();
+		row.querySelector("input").focus();
+	});
+
+	btnClearOrders.addEventListener("click", function () {
+		orderPasteInput.value = "";
+		orderTableBody.innerHTML = "";
+		setOrderStatus("等待粘贴订单数据", false);
+		updateOrderTableState();
+		orderPasteInput.focus();
+	});
+
+	btnSubmitOrders.addEventListener("click", function () {
+		if (hostOperationBusy) {
+			return;
+		}
+		var rows;
+		try {
+			rows = collectOrderRows();
+		} catch (error) {
+			setOrderStatus(error.message, true);
+			resultBox.value = "订单数据有误：" + error.message;
+			return;
+		}
+		resultBox.value = "正在预检并生成个性化订单，请稍候...";
+		hostOperationBusy = true;
+		updateOrderTableState();
+		csInterface.evalScript(
+			"submitDxfPersonalizedOrders(" + JSON.stringify(rows) + ")",
+			function (result) {
+				hostOperationBusy = false;
+				resultBox.value = result;
+				if (String(result || "").indexOf("订单提交完成！") === 0) {
+					setOrderStatus("订单已提交，共 " + rows.length + " 行", false);
+				} else {
+					setOrderStatus("订单提交失败，请查看运行结果", true);
+				}
+				updateOrderTableState();
+			}
+		);
+	});
+
 	btnSelectDxf.addEventListener("click", function () {
 		selectFile("选择 ETCAD 导出的 DXF 文件", "dxf", function (filePath) {
 			selectedDxfPath = filePath;
@@ -369,6 +638,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	updateImportState();
 	updateInheritanceRulState();
+	updateOrderTableState();
 	refreshSizeAnchorPairOptions("PAIR:1");
 	refreshInheritanceSizeOptions();
 });

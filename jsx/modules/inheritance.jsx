@@ -55,7 +55,13 @@ function collectDxfInheritanceSizeGroups(doc) {
     var sizeGroups = [];
     for (var layerIndex = 0; layerIndex < doc.layers.length; layerIndex++) {
         var layer = doc.layers[layerIndex];
-        if (layer.name === "LanTu_参数样例" || layer.name === "LanTu_继承基准") {
+        if (layer.name === "LanTu_参数样例" ||
+            layer.name === "LanTu_继承基准" ||
+            layer.name === "LanTu_名字参数样例" ||
+            layer.name === "LanTu_姓名参数样例" ||
+            layer.name === "LanTu_数字号码参数样例" ||
+            layer.name === "LanTu_订单输出" ||
+            layer.name === "LanTu_订单输出_生成中") {
             continue;
         }
         collectDxfSizeGroups(layer, sizeGroups);
@@ -215,7 +221,17 @@ function getDxfManualElementBaseName(item) {
 }
 
 function isDxfFixedSizeInheritanceElement(item) {
-    return getDxfMetadataValue(item, "AAMA_FIXED_SIZE") === "1";
+    if (getDxfMetadataValue(item, "AAMA_FIXED_SIZE") === "1") {
+        return true;
+    }
+    try {
+        var itemName = String(item.name || "");
+        return itemName === "名字" || itemName === "号码" ||
+            itemName.indexOf("名字") >= 0 ||
+            itemName.indexOf("号码") >= 0;
+    } catch (nameReadError) {
+        return false;
+    }
 }
 
 function getDxfDirectPieceElement(item) {
@@ -324,9 +340,22 @@ function ensureDxfInheritanceElementIds(container, pieceId, state) {
                 continue;
             }
             try {
-                if (!item.name || item.name === "<路径>" || item.name === "<编组>") {
-                    item.name = getDxfManualElementBaseName(item) + "_元素" +
-                        formatDxfElementNumber(state.counter);
+                var currentName = String(item.name || "");
+                var hasNameKeyword = currentName.indexOf("名字") >= 0;
+                var hasNumberKeyword = currentName.indexOf("号码") >= 0;
+                var shouldRename = !currentName ||
+                    currentName === "<路径>" ||
+                    currentName === "<编组>";
+
+                if (shouldRename) {
+                    if (hasNameKeyword) {
+                        item.name = "名字_" + formatDxfElementNumber(state.counter) + "号";
+                    } else if (hasNumberKeyword) {
+                        item.name = "号码_" + formatDxfElementNumber(state.counter) + "号";
+                    } else {
+                        item.name = getDxfManualElementBaseName(item) + "_元素" +
+                            formatDxfElementNumber(state.counter);
+                    }
                 }
             } catch (renameError) {
                 // 元素编号已经写入，图层面板名称不可写时保持原名。
