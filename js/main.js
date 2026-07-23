@@ -91,12 +91,13 @@ document.addEventListener("DOMContentLoaded", function () {
 	}
 
 	function isOrderHeaderRow(columns) {
-		return columns.length >= 5 &&
+		return columns.length >= 6 &&
 			/订单/.test(columns[0]) &&
 			/尺码|码数/.test(columns[1]) &&
 			/名字/.test(columns[2]) &&
 			/号码|数字/.test(columns[3]) &&
-			/件数|数量/.test(columns[4]);
+			/其它/.test(columns[4]) &&
+			/件数|数量/.test(columns[5]);
 	}
 
 	function splitOrderColumns(line) {
@@ -121,15 +122,16 @@ document.addEventListener("DOMContentLoaded", function () {
 			if (rows.length === 0 && isOrderHeaderRow(columns)) {
 				continue;
 			}
-			if (columns.length !== 5) {
-				throw new Error("第 " + (lineIndex + 1) + " 行不是五列数据");
+			if (columns.length !== 6) {
+				throw new Error("第 " + (lineIndex + 1) + " 行不是六列数据");
 			}
 			rows.push({
 				orderCode: columns[0],
 				size: columns[1],
 				name: columns[2],
 				number: columns[3],
-				quantity: columns[4]
+				other: columns[4],
+				quantity: columns[5]
 			});
 		}
 		if (rows.length === 0) {
@@ -151,7 +153,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	function addOrderTableRow(values) {
 		var row = document.createElement("tr");
-		var fields = ["orderCode", "size", "name", "number", "quantity"];
+		var fields = ["orderCode", "size", "name", "number", "other", "quantity"];
 		values = values || {};
 		for (var fieldIndex = 0; fieldIndex < fields.length; fieldIndex++) {
 			var cell = document.createElement("td");
@@ -207,7 +209,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		var firstInvalid = null;
 		for (var rowIndex = 0; rowIndex < tableRows.length; rowIndex++) {
 			var values = {};
-			var fields = ["orderCode", "size", "name", "number", "quantity"];
+		var fields = ["orderCode", "size", "name", "number", "other", "quantity"];
 			var hasValue = false;
 			for (var fieldIndex = 0; fieldIndex < fields.length; fieldIndex++) {
 				var fieldName = fields[fieldIndex];

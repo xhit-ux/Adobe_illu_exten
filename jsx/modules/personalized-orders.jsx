@@ -105,10 +105,12 @@ function ensureDxfPersonalizedOrderSamples() {
         var doc = app.activeDocument;
         ensureDxfPersonalizedOrderSampleLayer(doc, "LanTu_名字参数样例");
         ensureDxfPersonalizedOrderSampleLayer(doc, "LanTu_数字号码参数样例");
-        return "名字与数字号码参数样例图层已生成！\n" +
+        ensureDxfPersonalizedOrderSampleLayer(doc, "LanTu_其它参数样例");
+        return "名字、号码与其它参数样例图层已生成！\n" +
             "图层: LanTu_名字参数样例\n" +
             "图层: LanTu_数字号码参数样例\n" +
-            "名字贴图：添加以订单名字命名的样例元素；\n" +
+            "图层: LanTu_其它参数样例\n" +
+            "名字/其它贴图：添加以订单值命名的样例元素；\n" +
             "号码贴图：添加图层直属的 0~9 独立元素，并命名为对应数字；\n" +
             "若为文字元素，则无需操作样例图层，提交订单时会直接替换文字内容。";
     } catch (error) {
@@ -148,6 +150,7 @@ function normalizeDxfPersonalizedOrderRows(orderRows) {
             size: trimDxfOrderValue(sourceRow.size),
             name: trimDxfOrderValue(sourceRow.name),
             number: trimDxfOrderValue(sourceRow.number),
+            other: trimDxfOrderValue(sourceRow.other),
             quantity: quantity,
             rowNumber: rowNumber
         };
@@ -190,7 +193,12 @@ function isDxfOrderFieldItem(item, itemName) {
         if (name.indexOf(itemName) >= 0) {
             return true;
         }
-        var expectedFieldCode = itemName === "名字" ? "NAME" : "NUMBER";
+        var expectedFieldCode = "OTHER";
+        if (itemName === "名字") {
+            expectedFieldCode = "NAME";
+        } else if (itemName === "号码") {
+            expectedFieldCode = "NUMBER";
+        }
         if (getDxfMetadataValue(item, "AAMA_ORDER_FIELD") === expectedFieldCode) {
             return true;
         }
@@ -248,8 +256,8 @@ function validateDxfOrderSizeTemplates(sizeGroup) {
         throw new Error("尺码\"" + getDxfSizeNameFromGroup(sizeGroup) +
             "\"中没有裁片编组");
     }
-    var summary = { pieceCount: pieces.length, nameCount: 0, numberCount: 0 };
-    var fieldNames = ["名字", "号码"];
+    var summary = { pieceCount: pieces.length, nameCount: 0, numberCount: 0, otherCount: 0 };
+    var fieldNames = ["名字", "号码", "其它"];
     for (var pieceIndex = 0; pieceIndex < pieces.length; pieceIndex++) {
         var pieceName = String(pieces[pieceIndex].name || "裁片 " + (pieceIndex + 1));
         for (var fieldIndex = 0; fieldIndex < fieldNames.length; fieldIndex++) {
@@ -263,8 +271,10 @@ function validateDxfOrderSizeTemplates(sizeGroup) {
             }
             if (fieldNames[fieldIndex] === "名字") {
                 summary.nameCount += matches.length;
-            } else {
+            } else if (fieldNames[fieldIndex] === "号码") {
                 summary.numberCount += matches.length;
+            } else {
+                summary.otherCount += matches.length;
             }
         }
     }
@@ -594,7 +604,8 @@ function preflightDxfPersonalizedOrders(doc, orderRows) {
     // 获取样例图层（可能为 null，贴图模式下用户需手动填充）
     var sampleLayers = {
         name: getDxfPersonalizedOrderSampleLayer(doc, "LanTu_名字参数样例"),
-        number: getDxfPersonalizedOrderSampleLayer(doc, "LanTu_数字号码参数样例")
+        number: getDxfPersonalizedOrderSampleLayer(doc, "LanTu_数字号码参数样例"),
+        other: getDxfPersonalizedOrderSampleLayer(doc, "LanTu_其它参数样例")
     };
 
     var sizeGroups = collectDxfInheritanceSizeGroups(doc);
@@ -737,6 +748,16 @@ function submitDxfPersonalizedOrders(orderRows) {
                     );
                     mergeDxfOrderApplySummary(applySummary, updatedNumberCount);
                     if (updatedNumberCount.replaced > 0) {
+                        pieceUpdated = true;
+                    }
+
+                    // 其它替换：传入其它样例图层
+                    var updatedOtherCount = applyDxfOrderFieldToPiece(
+                        pieces[pieceIndex], "其它", row.other,
+                        preflight.sampleLayers.other, "OTHER"
+                    );
+                    mergeDxfOrderApplySummary(applySummary, updatedOtherCount);
+                    if (updatedOtherCount.replaced > 0) {
                         pieceUpdated = true;
                     }
                     if (pieceUpdated) {

@@ -60,6 +60,7 @@ function collectDxfInheritanceSizeGroups(doc) {
             layer.name === "LanTu_名字参数样例" ||
             layer.name === "LanTu_姓名参数样例" ||
             layer.name === "LanTu_数字号码参数样例" ||
+            layer.name === "LanTu_其它参数样例" ||
             layer.name === "LanTu_订单输出" ||
             layer.name === "LanTu_订单输出_生成中") {
             continue;
@@ -227,8 +228,10 @@ function isDxfFixedSizeInheritanceElement(item) {
     try {
         var itemName = String(item.name || "");
         return itemName === "名字" || itemName === "号码" ||
+            itemName === "其它" ||
             itemName.indexOf("名字") >= 0 ||
-            itemName.indexOf("号码") >= 0;
+            itemName.indexOf("号码") >= 0 ||
+            itemName.indexOf("其它") >= 0;
     } catch (nameReadError) {
         return false;
     }
@@ -343,6 +346,7 @@ function ensureDxfInheritanceElementIds(container, pieceId, state) {
                 var currentName = String(item.name || "");
                 var hasNameKeyword = currentName.indexOf("名字") >= 0;
                 var hasNumberKeyword = currentName.indexOf("号码") >= 0;
+                var hasOtherKeyword = currentName.indexOf("其它") >= 0;
                 var shouldRename = !currentName ||
                     currentName === "<路径>" ||
                     currentName === "<编组>";
@@ -352,6 +356,8 @@ function ensureDxfInheritanceElementIds(container, pieceId, state) {
                         item.name = "名字_" + formatDxfElementNumber(state.counter) + "号";
                     } else if (hasNumberKeyword) {
                         item.name = "号码_" + formatDxfElementNumber(state.counter) + "号";
+                    } else if (hasOtherKeyword) {
+                        item.name = "其它_" + formatDxfElementNumber(state.counter) + "号";
                     } else {
                         item.name = getDxfManualElementBaseName(item) + "_元素" +
                             formatDxfElementNumber(state.counter);

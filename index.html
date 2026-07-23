@@ -360,11 +360,12 @@
             white-space: nowrap;
         }
 
-        .order-table th:nth-child(1) { width: 24%; }
+        .order-table th:nth-child(1) { width: 20%; }
         .order-table th:nth-child(2),
-        .order-table th:nth-child(5) { width: 13%; }
-        .order-table th:nth-child(3) { width: 24%; }
-        .order-table th:nth-child(4) { width: 18%; }
+        .order-table th:nth-child(6) { width: 12%; }
+        .order-table th:nth-child(3) { width: 18%; }
+        .order-table th:nth-child(4) { width: 14%; }
+        .order-table th:nth-child(5) { width: 14%; }
 
         .order-table th:last-child,
         .order-table td:last-child {
@@ -569,7 +570,7 @@
             <details class="size-settings" open>
                 <summary>个性化订单</summary>
                 <div class="order-editor">
-                    <textarea id="order-paste-input" class="order-paste-input" spellcheck="false" placeholder="将 Excel 五列表格粘贴到这里：订单编号｜尺码｜名字｜号码｜件数"></textarea>
+                    <textarea id="order-paste-input" class="order-paste-input" spellcheck="false" placeholder="将 Excel 六列表格粘贴到这里：订单编号｜尺码｜名字｜号码｜其它｜件数"></textarea>
                     <div class="order-actions">
                         <button id="btn-create-order-samples" type="button">生成名字/号码样例</button>
                         <button id="btn-parse-orders" type="button">识别表格</button>
@@ -589,6 +590,7 @@
                                         <th>尺码</th>
                                         <th>名字</th>
                                         <th>号码</th>
+                                        <th>其它</th>
                                         <th>件数</th>
                                         <th></th>
                                     </tr>
