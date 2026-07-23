@@ -497,6 +497,12 @@ function applyDxfOrderTemplateItem(
 
     templateItem.remove();
     positionDxfOrderItemAtCenter(replacement, targetCenter);
+    // 确保替换元素在裁片编组的最顶层，而非被 duplicate 的 PLACEATEND 放到文档底部
+    try {
+        replacement.zOrder(ZOrderMethod.BRINGTOFRONT);
+    } catch (zOrderError) {
+        // 个别 Illustrator 对象不支持层级移动，保留当前位置。
+    }
     setDxfMetadataValue(replacement, "AAMA_ORDER_FIELD", fieldCode);
     return { replaced: true, reason: "name-sample" };
 }

@@ -2,3 +2,5 @@
 /.codex
 /.debug
 *.zip
+*.pdf
+markdown-pdf.css

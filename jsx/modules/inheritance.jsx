@@ -15,8 +15,10 @@ function collectDxfSizeGroups(container, result) {
         if (group.parent !== container) {
             continue;
         }
-        if (String(group.note || "").indexOf("AAMA_SIZE|") === 0 ||
-            /^尺码\s+/.test(String(group.name || ""))) {
+        var groupNote = String(group.note || "");
+        var groupName = String(group.name || "");
+        if (groupNote.indexOf("AAMA_SIZE|") === 0 ||
+            /^尺码\s+/.test(groupName)) {
             result.push(group);
         } else {
             collectDxfSizeGroups(group, result);
@@ -30,7 +32,8 @@ function collectDxfPieceGroups(container, result) {
         if (group.parent !== container) {
             continue;
         }
-        if (String(group.note || "").indexOf("AAMA_PIECE|") === 0) {
+        var groupNote = String(group.note || "");
+        if (groupNote.indexOf("AAMA_PIECE|") === 0) {
             result.push(group);
         } else {
             collectDxfPieceGroups(group, result);
@@ -305,85 +308,66 @@ function setDxfSelectedElementsFixedSize(isFixed) {
     }
 }
 
-function collectExistingDxfInheritanceElementIds(container, pieceId, state) {
-    var manualPrefix = pieceId + "|manual:";
-    var items = getDxfDirectInheritanceItems(container);
-    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
-        var item = items[itemIndex];
-        var elementId = getDxfElementId(item);
-        if (elementId) {
-            state.used[elementId] = true;
-            if (elementId.indexOf(manualPrefix) === 0) {
-                var manualNumber = parseInt(elementId.substring(manualPrefix.length), 10);
-                if (!isNaN(manualNumber)) {
-                    state.counter = Math.max(state.counter, manualNumber);
-                }
-            }
-        }
-        // 没有自身编号的编组是本轮新增加的原子元素。它会作为整体继承，
-        // 无需扫描内部可能包含的复合路径、图片或数千个图案子对象。
-        if (elementId && isDxfInheritanceGroupItem(item)) {
-            collectExistingDxfInheritanceElementIds(item, pieceId, state);
-        }
-    }
-}
-
+// 合并了原有 collectExistingDxfInheritanceElementIds 与
+// ensureDxfInheritanceElementIds，一次 tree walk 完成两阶段工作：
+// Phase A — 收集子元素已有编号并为已编号的 GroupItem 递归；
+// Phase B — 为当前容器中尚无编号的元素分配新编号。
+// 新出现的 GroupItem 内部不作为独立元素展开（原子继承）。
 function ensureDxfInheritanceElementIds(container, pieceId, state) {
     var items = getDxfDirectInheritanceItems(container);
-    for (var itemIndex = 0; itemIndex < items.length; itemIndex++) {
-        var item = items[itemIndex];
-        var elementId = getDxfElementId(item);
-        var isNewElement = !elementId;
-        if (!elementId) {
-            do {
-                state.counter++;
-                elementId = pieceId + "|manual:" + state.counter;
-            } while (state.used[elementId]);
-            if (!setDxfMetadataValue(item, "AAMA_ELEMENT", elementId)) {
-                continue;
-            }
-            try {
-                var currentName = String(item.name || "");
-                var hasNameKeyword = currentName.indexOf("名字") >= 0;
-                var hasNumberKeyword = currentName.indexOf("号码") >= 0;
-                var hasOtherKeyword = currentName.indexOf("其它") >= 0;
-                var shouldRename = !currentName ||
-                    currentName === "<路径>" ||
-                    currentName === "<编组>";
+    if (items.length === 0) {
+        return;
+    }
+    var manualPrefix = pieceId + "|manual:";
 
-                if (shouldRename) {
-                    if (hasNameKeyword) {
-                        item.name = "名字_" + formatDxfElementNumber(state.counter) + "号";
-                    } else if (hasNumberKeyword) {
-                        item.name = "号码_" + formatDxfElementNumber(state.counter) + "号";
-                    } else if (hasOtherKeyword) {
-                        item.name = "其它_" + formatDxfElementNumber(state.counter) + "号";
-                    } else {
-                        item.name = getDxfManualElementBaseName(item) + "_元素" +
-                            formatDxfElementNumber(state.counter);
-                    }
-                }
-            } catch (renameError) {
-                // 元素编号已经写入，图层面板名称不可写时保持原名。
+    // Phase A: 收集已有编号 + 向已编号 GroupItem 递归
+    for (var pa = 0; pa < items.length; pa++) {
+        var phaseItem = items[pa];
+        var phaseId = getDxfElementId(phaseItem);
+        if (phaseId) {
+            state.used[phaseId] = true;
+            if (phaseId.indexOf(manualPrefix) === 0) {
+                var mn = parseInt(phaseId.substring(manualPrefix.length), 10);
+                if (!isNaN(mn)) { state.counter = Math.max(state.counter, mn); }
             }
+        }
+        if (phaseId && isDxfInheritanceGroupItem(phaseItem)) {
+            ensureDxfInheritanceElementIds(phaseItem, pieceId, state);
+        }
+    }
+
+    // Phase B: 为尚无编号的元素分配新编号
+    for (var pb = 0; pb < items.length; pb++) {
+        var item = items[pb];
+        var elementId = getDxfElementId(item);
+        if (!elementId) {
+            do { state.counter++; elementId = pieceId + "|manual:" + state.counter; }
+            while (state.used[elementId]);
+            if (!setDxfMetadataValue(item, "AAMA_ELEMENT", elementId)) { continue; }
+            try {
+                var cn = String(item.name || "");
+                var hN = cn.indexOf("名字") >= 0;
+                var hU = cn.indexOf("号码") >= 0;
+                var hO = cn.indexOf("其它") >= 0;
+                var sr = !cn || cn === "<路径>" || cn === "<编组>";
+                if (sr) {
+                    if (hN) { item.name = "名字_" + formatDxfElementNumber(state.counter) + "号"; }
+                    else if (hU) { item.name = "号码_" + formatDxfElementNumber(state.counter) + "号"; }
+                    else if (hO) { item.name = "其它_" + formatDxfElementNumber(state.counter) + "号"; }
+                    else { item.name = getDxfManualElementBaseName(item) + "_元素" + formatDxfElementNumber(state.counter); }
+                }
+            } catch (re) { /* 名称不可写 */ }
         }
         state.used[elementId] = true;
-        if (!isNewElement && isDxfInheritanceGroupItem(item)) {
-            ensureDxfInheritanceElementIds(item, pieceId, state);
-        }
     }
 }
 
 function prepareDxfSizeGroupForInheritance(sizeGroup) {
     var pieces = ensureDxfPieceStableIds(sizeGroup);
     for (var pieceIndex = 0; pieceIndex < pieces.length; pieceIndex++) {
+        var pieceId = getDxfPieceStableId(pieces[pieceIndex]);
         var state = { counter: 0, used: {} };
-        collectExistingDxfInheritanceElementIds(
-            pieces[pieceIndex], getDxfPieceStableId(pieces[pieceIndex]), state
-        );
-        ensureDxfInheritanceElementIds(
-            pieces[pieceIndex], getDxfPieceStableId(pieces[pieceIndex]), state
-        );
+        ensureDxfInheritanceElementIds(pieces[pieceIndex], pieceId, state);
     }
     return pieces.length;
 }
@@ -1248,10 +1232,8 @@ function duplicateDxfInheritedElement(baseItem, targetContainer, context) {
     var duplicate = baseItem.duplicate(targetContainer, ElementPlacement.PLACEATEND);
     var baseCenter = getDxfItemCenter(baseItem);
     var isFixedSize = isDxfFixedSizeInheritanceElement(baseItem);
-    var gradeScaleX = context.gradeScaleX || context.pieceScaleX ||
-        context.gradeScale || 1;
-    var gradeScaleY = context.gradeScaleY || context.pieceScaleY ||
-        context.gradeScale || 1;
+    var gradeScaleX = context.gradeScaleX || context.pieceScaleX || context.gradeScale || 1;
+    var gradeScaleY = context.gradeScaleY || context.pieceScaleY || context.gradeScale || 1;
     var duplicateWasLocked = false;
     try {
         duplicateWasLocked = duplicate.locked === true;
@@ -1415,13 +1397,13 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
         }
         var snapshotRoot = getDxfInheritanceSnapshotRoot(doc);
         if (snapshotRoot === null) {
-            return "请先选择尺码并点击“设为基准”。";
+            return "请先选择尺码并点击\u201C设为基准\u201D。";
         }
         var baseSizeId = getDxfMetadataValue(
             snapshotRoot, "AAMA_INHERITANCE_ROOT"
         );
         if (!baseSizeId) {
-            return "元素修改基准缺少尺码编号，请重新点击“设为基准”。";
+            return "元素修改基准缺少尺码编号，请重新点击\u201C设为基准\u201D。";
         }
         // 只做一次文档级尺码组扫描；后续目标组直接复用该结果。
         var sizeGroups = ensureDxfSizeGroupIds(doc, false);
@@ -1433,12 +1415,12 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
             gradeTable, getDxfSizeNameFromGroup(baseSizeGroup)
         );
         if (baseSizeIndex < 0) {
-            return "RUL 文件不包含基准尺码“" +
-                getDxfSizeNameFromGroup(baseSizeGroup) + "”。";
+            return "RUL 文件不包含基准尺码\u201C" +
+                getDxfSizeNameFromGroup(baseSizeGroup) + "\u201D。";
         }
 
         // 旧版本快照曾跳过尺码标。先补齐快照、基码及目标组的唯一编号，
-        // 这样升级前创建的快照也能正确识别“基码中已删除”的对象。
+        // 这样升级前创建的快照也能正确识别"基码中已删除"的对象。
         inheritanceStage = "准备继承快照";
         prepareDxfInheritanceSnapshot(snapshotRoot);
         inheritanceStage = "扫描基准尺码新增元素";
@@ -1516,24 +1498,12 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
                     result.missingGradeRules++;
                     continue;
                 }
-                result.gradeScaleMin = Math.min(
-                    result.gradeScaleMin, gradeTransform.scale
-                );
-                result.gradeScaleMax = Math.max(
-                    result.gradeScaleMax, gradeTransform.scale
-                );
-                result.gradeScaleXMin = Math.min(
-                    result.gradeScaleXMin, gradeTransform.scaleX
-                );
-                result.gradeScaleXMax = Math.max(
-                    result.gradeScaleXMax, gradeTransform.scaleX
-                );
-                result.gradeScaleYMin = Math.min(
-                    result.gradeScaleYMin, gradeTransform.scaleY
-                );
-                result.gradeScaleYMax = Math.max(
-                    result.gradeScaleYMax, gradeTransform.scaleY
-                );
+                result.gradeScaleMin = Math.min(result.gradeScaleMin, gradeTransform.scale);
+                result.gradeScaleMax = Math.max(result.gradeScaleMax, gradeTransform.scale);
+                result.gradeScaleXMin = Math.min(result.gradeScaleXMin, gradeTransform.scaleX);
+                result.gradeScaleXMax = Math.max(result.gradeScaleXMax, gradeTransform.scaleX);
+                result.gradeScaleYMin = Math.min(result.gradeScaleYMin, gradeTransform.scaleY);
+                result.gradeScaleYMax = Math.max(result.gradeScaleYMax, gradeTransform.scaleY);
                 var context = {
                     snapshotPieceCenter: baseFrame.center,
                     targetPieceCenter: targetFrame.center,
@@ -1558,9 +1528,7 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
                 if (clipPath !== null) {
                     try {
                         clipPath.zOrder(ZOrderMethod.BRINGTOFRONT);
-                    } catch (clipOrderError) {
-                        // 保持当前剪切关系。
-                    }
+                    } catch (clipOrderError) { }
                 }
                 result.pieces++;
             }
@@ -1580,14 +1548,11 @@ function inheritDxfBaseToOtherSizes(rulFilePath) {
         }
         invalidateDxfAnchorOptionsCache();
         var gradeScaleSummary = result.pieces > 0 ?
-            result.gradeScaleMin.toFixed(4) + " ~ " + result.gradeScaleMax.toFixed(4) :
-            "无可计算裁片";
+            result.gradeScaleMin.toFixed(4) + " ~ " + result.gradeScaleMax.toFixed(4) : "无可计算裁片";
         var gradeScaleXSummary = result.pieces > 0 ?
-            result.gradeScaleXMin.toFixed(4) + " ~ " +
-                result.gradeScaleXMax.toFixed(4) : "无可计算裁片";
+            result.gradeScaleXMin.toFixed(4) + " ~ " + result.gradeScaleXMax.toFixed(4) : "无可计算裁片";
         var gradeScaleYSummary = result.pieces > 0 ?
-            result.gradeScaleYMin.toFixed(4) + " ~ " +
-                result.gradeScaleYMax.toFixed(4) : "无可计算裁片";
+            result.gradeScaleYMin.toFixed(4) + " ~ " + result.gradeScaleYMax.toFixed(4) : "无可计算裁片";
         return "元素修改继承完成！\n" +
             "基准尺码: " + getDxfSizeNameFromGroup(baseSizeGroup) + "\n" +
             "RUL规则: " + gradeTable.fileName + "\n" +
